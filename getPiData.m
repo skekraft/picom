@@ -29,7 +29,7 @@ base_url = 'https://biosisoftp1w.skekraft.se/piwebapi'; %Web API URL
 %% Get timeseries data
 % Get first
 attribute_path = listAttributePaths(1);
-TT = getSingleTimeseries(attribute_path, startTime, endTime, interval);
+TT = getSingleTimeseries(base_url, attribute_path, startTime, endTime, interval);
 
 % If multiple timeseries, use timestamps from first for syncronization
 if numel(listAttributePaths)>1
@@ -40,7 +40,7 @@ if numel(listAttributePaths)>1
     COLLECTION{1} = TT;
     for iLoop = 2:numel(listAttributePaths)
         attribute_path = listAttributePaths(iLoop);
-        TT = getSingleTimeseries(attribute_path, t1, t2, interval);
+        TT = getSingleTimeseries(base_url, attribute_path, t1, t2, interval);
         COLLECTION{iLoop} = TT;
     end
     TT = synchronize(COLLECTION{:});

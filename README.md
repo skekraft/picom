@@ -1,2 +1,5 @@
-#picom
-Get Time Series from Osisoft PI Web API
+# picom  
+Communication with Osisoft PI Web API
+
+Functions:  
+ getPiData - Get Interpolated Time Series Data  
