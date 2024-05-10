@@ -12,14 +12,18 @@ end
 % Interval as y, mo, d, h, m, s, ms
 % https://docs.aveva.com/bundle/af-sdk/page/html/T_OSIsoft_AF_Time_AFTimeSpan.htm
 %
+% using action GetInterpolated from Stream controller, See PI Web API Reference
+% https://docs.aveva.com/bundle/pi-web-api-reference/page/help/controllers/stream.html
+%
 % Example 1
 % Data = getPiData( "\\BIOSISOFTP1D\SvKrapportering\RengårdK1G1|InsAcPow", "2023-04-26 06:35", "2023-04-26 06:50", "1s");
 % plot(Data.Time, Data.InsAcPow)
 
 
 %% History
-% 2024-02-07, jnni, File created
+% 2024-02-07, jnni, File created /Johan Nilsson
 % 2024-03-21, jnni, Time parser updates
+% 2024-05-11, jnni, Reducing size of web response to 30%
 
 
 %% Settings
@@ -57,10 +61,12 @@ attribute_url = strcat(base_url, '/attributes?path=', attribute_path);
 attribute_json = webread(attribute_url);
 
 % Get interpolated data
+% Using selectedFields reduces response size to 1/3 
 data_url = strcat(attribute_json.Links.InterpolatedData, ...
     '?startTime=', startTime, ...
     '&endTime=', endTime, ...
-    '&interval=', interval);
+    '&interval=', interval, ...
+    '&selectedFields=Items.Timestamp;Items.Value');
 data_json = webread(data_url);
 
 if isfield(data_json.Items, 'Errors'), 
