@@ -1,9 +1,10 @@
-function [outputArg1,outputArg2] = getPiData(listAttributePaths, startTime, endTime, interval)
+function DATA = getPiData(listAttributePaths, startTime, endTime, interval, DATA_COLLECTION)
 arguments
     listAttributePaths (1,:) string
     startTime (1,1) string = "-1d"
     endTime (1,:) string = "*"
     interval (1,:) string = "1h"
+    DATA_COLLECTION {mustBeScalarOrEmpty} = timetable
 end
 %getPiData Get Interpolated Data from Osisoft PI Web API
 %
@@ -19,15 +20,57 @@ end
 % Data = getPiData( "\\BIOSISOFTP1D\SvKrapportering\RengårdK1G1|InsAcPow", "2023-04-26 06:35", "2023-04-26 06:50", "1s");
 % plot(Data.Time, Data.InsAcPow)
 
+%Notes
+% Web API limitation:  "Parameter 'timeRange / intervals' is greater than the maximum allowed (150000)."
+
 
 %% History
 % 2024-02-07, jnni, File created /Johan Nilsson
 % 2024-03-21, jnni, Time parser updates
 % 2024-05-11, jnni, Reducing size of web response to 30%
+% 2024-05-23, jnni, Recursive call workaround for web api limitation
 
 
 %% Settings
 base_url = 'https://biosisoftp1w.skekraft.se/piwebapi'; %Web API URL
+verbose = 2; %0=quiet, 1=normal, 2=debug
+
+% Check inargs
+interval_unit = extract(interval, lettersPattern);
+interval_number = str2double(extract(interval, digitsPattern));
+switch interval_unit
+    case "ms"
+        dur = seconds(interval_number/1000);
+    case "s"
+        dur = seconds(interval_number);
+    case "m"
+        dur = minutes(interval_number);
+    case "h"
+        dur = hours(interval_number);
+    case "d"
+        dur = days(interval_number);
+    case "y"
+        dur = years(interval_number);
+    otherwise
+        error("Unknown interval")
+end
+startTime = datetime(startTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
+endTime = datetime(endTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
+nSamples = (endTime - startTime)/dur;
+maxSamples = 150000;
+nLoop = ceil(nSamples/maxSamples);
+if verbose, fprintf("nLoop=%d, st=%s, et=%s, nSamples=%d\n", ...
+        nLoop, string(startTime), string(endTime), nSamples); end
+
+if nSamples>maxSamples
+    st= startTime + maxSamples*dur;
+    DATA = getPiData(listAttributePaths,  st, endTime, interval, DATA_COLLECTION);
+
+    endTime = st;
+else
+    DATA = timetable;
+end
+
 
 
 %% Get timeseries data
@@ -50,7 +93,7 @@ if numel(listAttributePaths)>1
     TT = synchronize(COLLECTION{:});
 end
 
-outputArg1 = TT;
+DATA = [TT; DATA];
 end %getPiData
 
 
@@ -63,8 +106,8 @@ attribute_json = webread(attribute_url);
 % Get interpolated data
 % Using selectedFields reduces response size to 1/3 
 data_url = strcat(attribute_json.Links.InterpolatedData, ...
-    '?startTime=', startTime, ...
-    '&endTime=', endTime, ...
+    '?startTime=', string(startTime), ...
+    '&endTime=', string(endTime), ...
     '&interval=', interval, ...
     '&selectedFields=Items.Timestamp;Items.Value');
 data_json = webread(data_url);
