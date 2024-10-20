@@ -29,11 +29,13 @@ end
 % 2024-03-21, jnni, Time parser updates
 % 2024-05-11, jnni, Reducing size of web response to 30%
 % 2024-05-23, jnni, Recursive call workaround for web api limitation
+% 2024-10-20, jnni, Accepting relative dates * (without max sample
+% recursive handling)
 
 
 %% Settings
 base_url = 'https://biosisoftp1w.skekraft.se/piwebapi'; %Web API URL
-verbose = 2; %0=quiet, 1=normal, 2=debug
+verbose = 0; %0=quiet, 1=normal, 2=debug
 
 % Check inargs
 interval_unit = extract(interval, lettersPattern);
@@ -54,23 +56,27 @@ switch interval_unit
     otherwise
         error("Unknown interval")
 end
-startTime = datetime(startTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
-endTime = datetime(endTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
-nSamples = (endTime - startTime)/dur;
-maxSamples = 150000;
-nLoop = ceil(nSamples/maxSamples);
-if verbose, fprintf("nLoop=%d, st=%s, et=%s, nSamples=%d\n", ...
-        nLoop, string(startTime), string(endTime), nSamples); end
 
+% Max sample recursive handling
+% Recursive calling if exceeding limit of max number of samples in web API
+% (Only used with fixed datetime, difficult to parse with realtive dates *)
+nSamples = NaN;      % Number of requested samples, deafults to unknown
+maxSamples = 150000; % Practical limit from trial and error
+if ~contains(startTime, "*")
+    startTime = datetime(startTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
+    endTime = datetime(endTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
+    nSamples = (endTime - startTime)/dur;
+    nLoop = ceil(nSamples/maxSamples);
+    if verbose, fprintf("nLoop=%d, st=%s, et=%s, nSamples=%d\n", ...
+            nLoop, string(startTime), string(endTime), nSamples); end
+end
 if nSamples>maxSamples
     st= startTime + maxSamples*dur;
     DATA = getPiData(listAttributePaths,  st, endTime, interval, DATA_COLLECTION);
-
     endTime = st;
 else
     DATA = timetable;
 end
-
 
 
 %% Get timeseries data
