@@ -31,7 +31,8 @@ end
 % 2024-05-23, jnni, Recursive call workaround for web api limitation
 % 2024-10-20, jnni, Accepting relative dates * (without max sample
 % recursive handling)
-
+% 2025-04-11, jnni, Bug fix with recursive collection creating duplicate
+% timestamps
 
 %% Settings
 base_url = 'https://biosisoftp1w.skekraft.se/piwebapi'; %Web API URL
@@ -61,7 +62,8 @@ end
 % Recursive calling if exceeding limit of max number of samples in web API
 % (Only used with fixed datetime, difficult to parse with realtive dates *)
 nSamples = NaN;      % Number of requested samples, deafults to unknown
-maxSamples = 150000; % Practical limit from trial and error
+% maxSamples = 150000; % Practical limit from trial and error
+maxSamples = 50000; % Reduced limit because of random internal PI errors 2025-02-05
 if ~contains(startTime, "*")
     startTime = datetime(startTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
     endTime = datetime(endTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
@@ -73,7 +75,7 @@ end
 if nSamples>maxSamples
     st= startTime + maxSamples*dur;
     DATA = getPiData(listAttributePaths,  st, endTime, interval, DATA_COLLECTION);
-    endTime = st;
+    endTime = st-dur;
 else
     DATA = timetable;
 end
