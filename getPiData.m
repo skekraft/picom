@@ -33,6 +33,9 @@ end
 % recursive handling)
 % 2025-04-11, jnni, Bug fix with recursive collection creating duplicate
 % timestamps
+% 2025-06-17, jnni, Accepting also boolean values from PI. 
+% 2025-06-17 jnni, converting all data to double before synchronization
+% 2025-09-29, jnni, warning when single timeseies fail, return the rest
 
 %% Settings
 base_url = 'https://biosisoftp1w.skekraft.se/piwebapi'; %Web API URL
@@ -82,26 +85,41 @@ end
 
 
 %% Get timeseries data
-% Get first
-attribute_path = listAttributePaths(1);
-TT = getSingleTimeseries(base_url, attribute_path, startTime, endTime, interval);
+%Collect one timeseries at a time, then synchronize to singel timetable
+COLLECTION = {};
+for iLoop = 1:numel(listAttributePaths)
+    attribute_path = listAttributePaths(iLoop);
+    try
+        TT = getSingleTimeseries(base_url, attribute_path, startTime, endTime, interval);
 
-% If multiple timeseries, use timestamps from first for syncronization
-if numel(listAttributePaths)>1
-    t1 = string(datetime(TT.Time(1), 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS'));
-    t2 = string(datetime(TT.Time(end), 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS'));
-
-    COLLECTION = {};
-    COLLECTION{1} = TT;
-    for iLoop = 2:numel(listAttributePaths)
-        attribute_path = listAttributePaths(iLoop);
-        TT = getSingleTimeseries(base_url, attribute_path, t1, t2, interval);
-        COLLECTION{iLoop} = TT;
+        % If relative time, use timestamps from first for syncronization
+        if contains(string(startTime), "*")
+            startTime = string(datetime(TT.Time(1), 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS'));
+        end
+        if contains(string(endTime), "*")
+            endTime = string(datetime(TT.Time(end), 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS'));
+        end
+    catch ME
+        warning('Failed fetching %s\n%s', attribute_path,ME.message)
+        TT = timetable; %Empty
     end
-    TT = synchronize(COLLECTION{:});
+    COLLECTION{iLoop} = TT;
+end
+COLLECTION = COLLECTION(~cellfun(@isempty, COLLECTION));
+
+% Bool to double before synchronize (one way to include bool)
+for iLoop = 1:numel(COLLECTION)
+    tmp = COLLECTION{iLoop}.(1);
+    if any(islogical(tmp))
+        COLLECTION{iLoop}.(1) = double(COLLECTION{iLoop}.(1));
+        varname = COLLECTION{iLoop}.Properties.VariableNames{1};
+        fprintf("Converting ''%s'' from bool to double before synchronize\n", varname)
+    end
 end
 
-DATA = [TT; DATA];
+TT = synchronize(COLLECTION{:});
+
+DATA = [TT; DATA];  %Recursive calling when large number of samples
 end %getPiData
 
 
@@ -120,7 +138,7 @@ data_url = strcat(attribute_json.Links.InterpolatedData, ...
     '&selectedFields=Items.Timestamp;Items.Value');
 data_json = webread(data_url);
 
-if isfield(data_json.Items, 'Errors'), 
+if isfield(data_json.Items, 'Errors') 
     error(join(string(struct2cell(data_json.Items.Errors))))
 end
 
@@ -163,7 +181,8 @@ if ~isempty(select)
 end
 
 % Remove future values appearing as struct
-select = cellfun(@isnumeric, {data_json.Items.Value}); 
+% select = cellfun(@isnumeric, {data_json.Items.Value}); %2025-06-17, jnni
+select = ~cellfun(@isstruct, {data_json.Items.Value}); 
 
 TT = timetable(...
     Time(select), ...
