@@ -36,6 +36,7 @@ end
 % 2025-06-17, jnni, Accepting also boolean values from PI. 
 % 2025-06-17 jnni, converting all data to double before synchronization
 % 2025-09-29, jnni, warning when single timeseies fail, return the rest
+% 2026-05-18, jnni, Matlab Memoized to improve performance,workaround for slow PI AF
 
 %% Settings
 base_url = 'https://biosisoftp1w.skekraft.se/piwebapi'; %Web API URL
@@ -124,10 +125,24 @@ end %getPiData
 
 
 
+% Web API GetByPath has a very slow response around 13 s for single path.
+% Selected fields gives no improvement
+% https://biosisoftp1w.skekraft.se/piwebapi/attributes?path=\\BIOSISOFTP1D\SvKrapportering\SelsforsK6G1|GridFreq&selectedFields=WebId
+% Workaround with Matlab MemoizedFunction to speed up subsequent calls
+function attribute_json = getWebId(attribute_url)
+attribute_json = webread(attribute_url);
+end
+% Clear all with: clearAllMemoizedCaches
+
+
 function TT = getSingleTimeseries(base_url, attribute_path, startTime, endTime, interval)
 % Get single timeseries
 attribute_url = strcat(base_url, '/attributes?path=', attribute_path);
-attribute_json = webread(attribute_url);
+% attribute_json = webread(attribute_url);
+mf = memoize(@getWebId);
+mf.CacheSize = 100;
+attribute_json = mf(attribute_url);
+
 
 % Get interpolated data
 % Using selectedFields reduces response size to 1/3 
