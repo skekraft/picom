@@ -6,18 +6,18 @@ arguments
     interval (1,1) string = "1h"
     DATA_COLLECTION {mustBeScalarOrEmpty} = timetable
 end
-%getPiData Get timeseries as interpolatedd data from Aveva PI archive
+%getPiData Get timeseries as interpolated data from Aveva PI archive
 %
 %Data = getPiData(attribute_path, startTime, endTime, interval)
 %
 %Indata:
-% -listPaths  - String array with path to AF Attribute or PI point
-% -startTime  - Start time as PI time string
-% -endTime    - End time as PI time string
-% -Interval   - Number followed by resolution y, mo, d, h, m, s, ms
+% listPaths - String array with path to AF Attribute or PI point
+% startTime - Start time as PI time string
+% endTime   - End time as PI time string
+% interval  - Number followed by resolution y, mo, d, h, m, s, ms
 %
 %Output:
-% -DATA - Timetable with synchronized timeseries
+% DATA      - Timetable with synchronized timeseries
 %
 %Example:
 % Data = getPiData( "\\BIOSISOFTP1D\SvKrapportering\RengårdK1G1|InsAcPow", "2023-04-26 06:35", "2023-04-26 06:50", "1s");
@@ -37,7 +37,7 @@ end
 % 2026-05-08 14:30:00	Absolute timestamp (PI's space-separated form). Seconds part is optional.
 % 2026-05-08T14:30:00Z	ISO 8601 timestamp (also accepted by PI Web API in many contexts)
 %
-%Interval format
+%Intervals format
 % ms    milliseconds
 % s     seconds
 % m     minute
@@ -54,6 +54,7 @@ end
 
 %Notes
 % Web API limitation:  "Parameter 'timeRange / intervals' is greater than the maximum allowed (150000)."
+% Client sida WebID: https://www.pisharp.com/article/451/boost-pi-vision-performance-client-side-webid-20-generation-for-custom-symbols
 
 
 %% History
@@ -70,53 +71,65 @@ end
 % 2025-09-29, jnni, warning when single timeseries fail, return the rest
 % 2026-05-18, jnni, Matlab Memoized to improve performance,workaround for slow PI AF
 % 2026-05-27, jnni, Create WebId on client side for performance
+% 2026-09-28, jnni, Added documentation of PI time string
 
 
 %% Settings
+% base_url = 'https://piserver.com/piwebapi'; %Web API URL
 base_url = 'https://biosisoftp1w.skekraft.se/piwebapi'; %Web API URL
 verbose = 0; %0=quiet, 1=normal, 2=debug
+realtiveTimePattern = ("*"|"T"|"y"); %PI time string with relative reference
 
 
 %% Check inargs
+%
+% Intervals
+% https://docs.aveva.com/bundle/af-sdk/page/html/T_OSIsoft_AF_Time_AFTimeSpan.htm
 interval_unit = extract(interval, lettersPattern);
 interval_number = str2double(extract(interval, digitsPattern));
 switch interval_unit
     case "ms"
-        dur = seconds(interval_number/1000);
+        intervals = seconds(interval_number/1000);
     case "s"
-        dur = seconds(interval_number);
+        intervals = seconds(interval_number);
     case "m"
-        dur = minutes(interval_number);
+        intervals = minutes(interval_number);
     case "h"
-        dur = hours(interval_number);
+        intervals = hours(interval_number);
     case "d"
-        dur = days(interval_number);
+        intervals = days(interval_number);
     case "y"
-        dur = years(interval_number);
+        intervals = years(interval_number);
     otherwise
-        error("Unknown interval")
+        error("Unknown intervals")
 end
 
 
-%% Recursive handling of longer time ranges
+%% Client-Side Paging for Extensive Datasets
+% Recursive handling of longer time ranges
+% https://www.pisharp.com/article/46/pi-web-api-maxcount-default-limits-pagination-bypass-patterns
+%
+% Note: Not implemented for relative time reference. Only used with fixed 
+% datetime, difficult to parse relative dates as in server timeframe
 %
 % Recursive calling if exceeding limit of max number of samples in web API
-% (Only used with fixed datetime, difficult to parse with realtive dates *)
 nSamples = NaN;      % Number of requested samples, deafults to unknown
-% maxSamples = 150000; % Practical limit from trial and error
-maxSamples = 50000; % Reduced limit because of random internal PI errors 2025-02-05
-if ~contains(startTime, "*") && ~contains(endTime, "*")
-    startTime = datetime(startTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
-    endTime = datetime(endTime, 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS');
-    nSamples = (endTime - startTime)/dur;
-    nLoop = ceil(nSamples/maxSamples);
-    if verbose, fprintf("nLoop=%d, st=%s, et=%s, nSamples=%d\n", ...
+% maxCount = 150000; % Practical limit from trial and error
+maxCount = 50000; % Reduced limit because of random internal PI errors 2025-02-05
+if ~contains(startTime, realtiveTimePattern) && ~contains(endTime, realtiveTimePattern)
+    startTime = datetime(startTime, 'Format', 'uuuu-MM-dd'' ''HH:mm:ss.SSSSSSS');
+    endTime = datetime(endTime, 'Format', 'uuuu-MM-dd'' ''HH:mm:ss.SSSSSSS');
+    timeRange = (endTime - startTime);
+    nSamples = timeRange/intervals;
+    nLoop = ceil(nSamples/maxCount); %Segment Time Ranges
+    if verbose, fprintf("Time range segmented in %d pages, st=%s, et=%s, (timeRange/intervals)=%d\n", ...
             nLoop, string(startTime), string(endTime), nSamples); end
 end
-if nSamples>maxSamples
-    st= startTime + maxSamples*dur;
+if nSamples>maxCount
+    %Iterative call for tail of time range
+    st= startTime + maxCount*intervals;
     DATA = getPiData(listPaths,  st, endTime, interval, DATA_COLLECTION);
-    endTime = st-dur;
+    endTime = st-intervals;
 else
     DATA = timetable;
 end
@@ -222,16 +235,19 @@ for iLoop = 1:height(tsConfig)
         end
         TT.Properties.VariableNames =  string(matlab.lang.makeValidName(varname));
 
-        % If relative time, use timestamps from first for syncronization
-        % if contains(string(startTime), "*")
-        %     startTime = string(datetime(TT.Time(1), 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS'));
-        % end
-        % if contains(string(endTime), "*")
-        %     endTime = string(datetime(TT.Time(end), 'Format', 'uuuu-MM-dd''T''HH:mm:ss.SSSSSSS'));
-        % end
+        % If relative time, use timestamps from first timeseries for syncronization
+        if contains(string(startTime), realtiveTimePattern)
+            startTime = string(datetime(TT.Time(1), 'Format', 'uuuu-MM-dd'' ''HH:mm:ss.SSSSSSS'));
+        end
+        if contains(string(endTime), realtiveTimePattern)
+            endTime = string(datetime(TT.Time(end), 'Format', 'uuuu-MM-dd'' ''HH:mm:ss.SSSSSSS'));
+        end
     catch ME
         warning('Failed fetching %s\n%s', tsConfig.path(iLoop), ME.message)
         TT = timetable; %Empty
+    end
+    if verbose>1,
+        disp(sprintf("%d samples received, startTime=%s, endTime=%s", height(TT), startTime, endTime))
     end
     COLLECTION{iLoop} = TT;
 end
@@ -258,12 +274,16 @@ function TT = getSingleTimeseries(base_url, WebId, startTime, endTime, interval)
 % Get single timeseries
 data_url = strcat(base_url, ...
     "/streams/", WebId, "/interpolated", ...
-    '?startTime=', string(startTime), ...
-    '&endTime=', string(endTime), ...
+    '?startTime=', urlencode(string(startTime)), ...
+    '&endTime=', urlencode(string(endTime)), ...
     '&interval=', interval, ...
     '&selectedFields=Items.Timestamp;Items.Value');
-data_json = webread(data_url);
-
+try
+    data_json = webread(data_url);
+catch ME
+    disp(sprintf('<a href = "%s">%s</a>', data_url, data_url));
+    rethrow(ME)
+end
 if isfield(data_json.Items, 'Errors')
     error(join(string(struct2cell(data_json.Items.Errors))))
 end
