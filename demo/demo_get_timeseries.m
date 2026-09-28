@@ -1,5 +1,8 @@
 % Demo get timeseries from PI
 
+% Add path
+% addpath("..")
+
 
 %% Single timeseries
 attribute_path = "\\BIOSISOFTP1D\SvKrapportering\RengårdK1G1|InsAcPow";
@@ -11,7 +14,7 @@ plot(DATA.Time, DATA.InsAcPow)
 %% Batch multiple timeseries
 element_path = "\\BIOSISOFTP1D\SvKrapportering\RengårdK1G1";
 listAttributePaths = element_path + ["|GridFreq"; "|InsAcPow"];
-DATA = getPiData(listAttributePaths, "2023-04-26 06:35", "2023-04-26 06:50", "1s");
+DATA = getPiData(listAttributePaths, "2023-04-26 06:39", "2023-04-26 06:43", "250ms");
 
 % Plot 
 figure(2); clf; 

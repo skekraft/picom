@@ -6,19 +6,51 @@ arguments
     interval (1,1) string = "1h"
     DATA_COLLECTION {mustBeScalarOrEmpty} = timetable
 end
-%getPiData Get Interpolated Data from Osisoft PI Web API
+%getPiData Get timeseries as interpolatedd data from Aveva PI archive
 %
-% Data = getPiData(attribute_path, startTime, endTime, interval)
+%Data = getPiData(attribute_path, startTime, endTime, interval)
 %
-% Interval as y, mo, d, h, m, s, ms
-% https://docs.aveva.com/bundle/af-sdk/page/html/T_OSIsoft_AF_Time_AFTimeSpan.htm
+%Indata:
+% -listPaths  - String array with path to AF Attribute or PI point
+% -startTime  - Start time as PI time string
+% -endTime    - End time as PI time string
+% -Interval   - Number followed by resolution y, mo, d, h, m, s, ms
 %
-% using action GetInterpolated from Stream controller, See PI Web API Reference
-% https://docs.aveva.com/bundle/pi-web-api-reference/page/help/controllers/stream.html
+%Output:
+% -DATA - Timetable with synchronized timeseries
 %
-% Example 1
+%Example:
 % Data = getPiData( "\\BIOSISOFTP1D\SvKrapportering\RengårdK1G1|InsAcPow", "2023-04-26 06:35", "2023-04-26 06:50", "1s");
 % plot(Data.Time, Data.InsAcPow)
+%
+%PI time string
+% The PI System uses a compact string-based syntax for specifying points in time 
+% A PI time string can be an absolute timestamp (2026-05-08 14:30:00) or a relative 
+% expression anchored to now (*-1h) or to today's midnight (T+8h).
+% (See doc at pisharp https://www.pisharp.com/tools/pi-time-converter)
+% *	                    Current PI server time (now)
+% *-1h, *+30m, *-2d	    Relative to now. Units: s (seconds), m (minutes), h (hours), d (days), w (weeks).
+% T                     Today's midnight on the PI server (start of day)
+% T+8h, T-30m, T+1d     Relative to today's midnight
+% y	                    Midnight yesterday (alias for T-1d)
+% 2026-05-08	        Absolute date (PI date format). Defaults to 00:00:00.
+% 2026-05-08 14:30:00	Absolute timestamp (PI's space-separated form). Seconds part is optional.
+% 2026-05-08T14:30:00Z	ISO 8601 timestamp (also accepted by PI Web API in many contexts)
+%
+%Interval format
+% ms    milliseconds
+% s     seconds
+% m     minute
+% h     hour
+% d     days
+% mo    months
+% y     years
+% Full documentation at https://docs.aveva.com/bundle/af-sdk/page/html/T_OSIsoft_AF_Time_AFTimeSpan.htm
+%
+%Communication with with PI archive achieved through action GetInterpolated from Stream controller, 
+% See PI Web API Reference https://docs.aveva.com/bundle/pi-web-api-reference/page/help/controllers/stream.html
+%
+
 
 %Notes
 % Web API limitation:  "Parameter 'timeRange / intervals' is greater than the maximum allowed (150000)."
@@ -35,7 +67,7 @@ end
 % timestamps
 % 2025-06-17, jnni, Accepting also boolean values from PI.
 % 2025-06-17 jnni, converting all data to double before synchronization
-% 2025-09-29, jnni, warning when single timeseies fail, return the rest
+% 2025-09-29, jnni, warning when single timeseries fail, return the rest
 % 2026-05-18, jnni, Matlab Memoized to improve performance,workaround for slow PI AF
 % 2026-05-27, jnni, Create WebId on client side for performance
 
@@ -93,7 +125,7 @@ end
 %% Get WebId
 % For each timeseries get WebID 
 %
-% Alt 1. Search for WebId with API has a ery slow response around 13 s for single path.
+% Alt 1. Search for WebId with API, has a ery slow response around 13 s for single path.
 % Alt 2. Matlab memoize improves subsequent calls
 % Alt 3. Calculating WebId on client side gives 1000x time improvement
 % Selected fields gives no improvement
@@ -155,7 +187,6 @@ for iLoop = 1:height(tsConfig)
 
     % Build the WebId and URL
     WebId = sprintf("%s%s%s%s", type, version, marker, encoded);
-    %
 
     % Keep WebId
     tsConfig.WebId(iLoop) = string(WebId);
